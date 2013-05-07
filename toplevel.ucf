@@ -1,0 +1,51 @@
+## This file is a general .ucf for Nexys3 rev B board
+## To use it in a project:
+## - remove or comment the lines corresponding to unused pins
+## - rename the used signals according to the project
+
+##Clock signal
+Net "clk" LOC=V10 | IOSTANDARD=LVCMOS33;
+Net "clk" TNM_NET = sys_clk_pin;
+TIMESPEC TS_sys_clk_pin = PERIOD sys_clk_pin 100000 kHz;
+
+## Leds
+Net "LED<0>" LOC = U16 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L2P_CMPCLK, Sch name = LD0
+Net "LED<1>" LOC = V16 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L2N_CMPMOSI, Sch name = LD1
+Net "LED<2>" LOC = U15 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L5P, Sch name = LD2
+Net "LED<3>" LOC = V15 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L5N, Sch name = LD3
+Net "LED<4>" LOC = M11 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L15P, Sch name = LD4
+Net "LED<5>" LOC = N11 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L15N, Sch name = LD5
+Net "LED<6>" LOC = R11 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L16P, Sch name = LD6
+Net "LED<7>" LOC = T11 |  IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L16N_VREF, Sch name = LD7
+
+## Switches
+Net "RST" LOC = T10 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L29N_GCLK2, Sch name = SW0
+Net "SW<0>" LOC = T9 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L32P_GCLK29, Sch name = SW1
+Net "SW<1>" LOC = V9 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L32N_GCLK28, Sch name = SW2
+Net "SW<2>" LOC = M8 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L40P, Sch name = SW3
+Net "SW<3>" LOC = N8 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L40N, Sch name = SW4
+Net "SW<4>" LOC = U8 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L41P, Sch name = SW5
+Net "SW<5>" LOC = V8 | IOSTANDARD = LVCMOS33; #Bank = 2, pin name = IO_L41N_VREF, Sch name = SW6
+Net "SW<6>" LOC = T5 | IOSTANDARD = LVCMOS33; #Bank = MISC, pin name = IO_L48N_RDWR_B_VREF_2, Sch name = SW7
+
+## Buttons
+Net "btn<0>" LOC = B8 | IOSTANDARD = LVCMOS33; #Bank = 0, pin name = IO_L33P, Sch name = BTNS
+Net "btn<1>" LOC = A8 | IOSTANDARD = LVCMOS33; #Bank = 0, pin name = IO_L33N, Sch name = BTNU
+Net "btn<2>" LOC = C4 | IOSTANDARD = LVCMOS33; #Bank = 0, pin name = IO_L1N_VREF, Sch name = BTNL
+Net "btn<3>" LOC = C9 | IOSTANDARD = LVCMOS33; #Bank = 0, pin name = IO_L34N_GCLK18, Sch name = BTND
+Net "btn<4>" LOC = D9 | IOSTANDARD = LVCMOS33; # Bank = 0, pin name = IO_L34P_GCLK19, Sch name = BTNR
+
+## Usb-RS232 interface
+Net "RX" LOC = N17 | IOSTANDARD=LVCMOS33; #Bank = 1, pin name = IO_L48P_HDC_M1DQ8, Sch name = MCU-RX
+Net "TX" LOC = N18 | IOSTANDARD=LVCMOS33; #Bank = 1, pin name = IO_L48N_M1DQ9, Sch name = MCU-TX
+
+##JD
+Net "AD_CS" LOC = G11 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L40P, Sch name = JD1
+Net "AD_D0" LOC = F10 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L40N, Sch name = JD2
+Net "AD_D1" LOC = F11 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L42P, Sch name = JD3
+Net "AD_CK" LOC = E11 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L42N, Sch name = JD4
+#Net "JD<4>" LOC = D12 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L47P, Sch name = JD7
+#Net "JD<5>" LOC = C12 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L47N, Sch name = JD8
+#Net "JD<6>" LOC = F12 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L51P, Sch name = JD9
+#Net "JD<7>" LOC = E12 | IOSTANDARD = LVCMOS33; #Bank = 3, pin name = IO_L51N, Sch name = JD10
+
