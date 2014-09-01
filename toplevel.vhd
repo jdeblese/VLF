@@ -1,24 +1,5 @@
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-package toplevel_comp is
-	component toplevel
-	Port (
-		RST : IN STD_LOGIC;
-		CLK : in  STD_LOGIC;
-		LED : OUT STD_LOGIC_VECTOR(7 downto 0);
-		SW : IN STD_LOGIC_VECTOR(6 downto 0);
-		BTN : IN STD_LOGIC_VECTOR(4 downto 0);
-		TX  : out STD_LOGIC;
-		RX  : in STD_LOGIC;
-		AD_CS : out std_logic;
-		AD_D0 : in std_logic;
-		AD_D1 : in std_logic;
-		AD_CK : out std_logic );
-	end component;
-end package;
-
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
 package clockgen_comp is
 	type clockgen_status is record
 		done      : std_logic;
@@ -36,7 +17,6 @@ library UNISIM;
 use UNISIM.VComponents.all;
 
 use work.clockgen_comp.all;
-use work.uart_comp.all;
 
 entity toplevel is
 	Port (
@@ -46,7 +26,6 @@ entity toplevel is
 		SW : IN STD_LOGIC_VECTOR(6 downto 0);
 		BTN : IN STD_LOGIC_VECTOR(4 downto 0);
 		TX  : out STD_LOGIC;
-		RX  : in STD_LOGIC;
 		AD_CS : out std_logic;
 		AD_D0 : in std_logic;
 		AD_D1 : in std_logic;
@@ -54,7 +33,6 @@ entity toplevel is
 end toplevel;
 
 architecture Behavioral of toplevel is
-    signal master_buf : std_logic;
     signal clk2x_ub, clk2xn_ub : std_logic;
     signal adclk_ub, adclk : std_logic;
     signal clkfb : std_logic;
@@ -65,27 +43,19 @@ architecture Behavioral of toplevel is
 	signal bcnt, bcnt_new : unsigned(4 downto 0);
 	signal cs, cs_new : std_logic;
 	signal data, data_new : std_logic_vector(11 downto 0);
+	signal prev, prev_new : std_logic_vector(data'range);
 	signal sync_d0 : std_logic_vector(1 downto 0);
 	signal latch, latch_new : std_logic_vector(7 downto 0);
 
-	signal prev, prev_new : std_logic_vector(11 downto 0);
 
+	constant bitgain : integer := 4;
+	constant decim_factor : integer := 10;
+	signal acc, acc_new : signed(data'high + bitgain downto 0);
+	signal delayed, delayed_new : signed(acc'range);
+	signal delayed2, delayed2_new : signed(acc'range);
+	signal comb, comb_new : signed(data'high + bitgain downto 0);
+	signal decim, decim_new : unsigned(4 downto 0);
 begin
-
-	-- Is this buffer really required?
-	ibuf : BUFIO2
-	generic map (
-	   DIVIDE => 1,           -- DIVCLK divider (1-8)
-	   DIVIDE_BYPASS => TRUE, -- Bypass the divider circuitry (TRUE -> DIVCLK is passthrough)
-	   I_INVERT => FALSE,     -- Invert clock (TRUE/FALSE)
-	   USE_DOUBLER => FALSE   -- Use doubler circuitry (TRUE/FALSE)
-	)
-	port map (
-	   I => CLK,             -- 1-bit input: Clock input (connect to IBUFG)
-	   DIVCLK => master_buf, -- 1-bit output: Divided clock output
-	   IOCLK => open,        -- 1-bit output: I/O output clock
-	   SERDESSTROBE => open  -- 1-bit output: Output SERDES strobe (connect to ISERDES2/OSERDES2)
-	);
 
 	-- Minimum output frequency of FX is 5 MHz, so have to use CLKDV instead
 	dcm : DCM_SP
@@ -102,6 +72,7 @@ begin
 		RST => rst,             -- 1-bit input: Active high reset input
 		CLKIN => clk,           -- 1-bit input: Clock input
 		CLKFB => clkfb,         -- 1-bit input: Clock feedback input
+
 		CLK2X => clk2x_ub,      -- 1-bit output: 2X clock frequency clock output
 		CLK2X180 => clk2xn_ub,  -- 1-bit output: 2X clock frequency, 180 degree clock output
 		CLKFX => open,          -- 1-bit output: Digital Frequency Synthesizer output (DFS)
@@ -114,6 +85,7 @@ begin
 		LOCKED => status.locked,-- 1-bit output: DCM_SP Lock Output
 		PSDONE => status.done,  -- 1-bit output: Phase shift done output
 		STATUS => statvec,      -- 8-bit output: DCM_SP status output
+
 		DSSEN => '0',           -- 1-bit input: Unsupported, specify to GND.
 		PSCLK => open,          -- 1-bit input: Phase shift clock input
 		PSEN => open,           -- 1-bit input: Phase shift enable
@@ -127,7 +99,12 @@ begin
 
 	status.clkin_err <= statvec(1);
 	status.clkfx_err <= statvec(2);
-	ucomm : uart port map( latch, TX, RX, CLK, RST );
+	ucomm : entity work.uart
+		port map(
+			data => latch,
+			TX => TX,
+			CLK => CLK,
+			RST => RST );
 
 	AD_CS <= cs;
 	AD_CK <= sclk;
@@ -147,14 +124,26 @@ begin
 	begin
 		if RST = '1' then
 			sclk <= '0';
-			bcnt <= "00000";
+			bcnt <= (others => '0');
+			data <= (others => '0');
+			prev <= (others => '0');
 			latch <= X"00";
-			prev <= X"000";
+			acc <= (others => '0');
+			delayed <= (others => '0');
+			delayed2 <= (others => '0');
+			comb <= (others => '0');
+			decim <= to_unsigned(5, decim'length);
 		elsif rising_edge(adclk) then
-			sclk <= not(sclk);
+			sclk <= not(sclk);  -- Note: divides adclk by 2
 			bcnt <= bcnt_new;
-			latch <= latch_new;
 			prev <= prev_new;
+			data <= data_new;
+			latch <= latch_new;
+			delayed <= delayed_new;
+			delayed2 <= delayed2_new;
+			acc <= acc_new;
+			comb <= comb_new;
+			decim <= decim_new;
 		end if;
 	end process;
 
@@ -162,59 +151,83 @@ begin
 	begin
 		if RST = '1' then
 			cs <= '1';
-			data <= X"000";
 		elsif falling_edge(adclk) then
 			cs <= cs_new;
-			data <= data_new;
 		end if;
 	end process;
 
-	process(bcnt, cs, sclk, data, latch, prev, sync_d0)
+	process(bcnt, cs, sclk, data, prev, latch, sync_d0, acc, delayed, delayed2, comb, decim)
 		variable bcnt_nxt : unsigned(4 downto 0);
 		variable cs_nxt : std_logic;
 		variable data_nxt : std_logic_vector(11 downto 0);
+		variable prev_nxt : std_logic_vector(prev'range);
 		variable latch_nxt : std_logic_vector(7 downto 0);
-		variable prev_nxt : std_logic_vector(11 downto 0);
-		variable delta : unsigned(11 downto 0);
+		variable sample : signed(data'high + 1 downto 0);
+		variable acc_nxt : signed(acc'range);
+		variable delayed_nxt : signed(acc'range);
+		variable delayed2_nxt : signed(acc'range);
+		variable comb_nxt : signed(comb'range);
+		variable decim_nxt : unsigned(decim'range);
 	begin
 		bcnt_nxt := bcnt;
 		cs_nxt := cs;
 		data_nxt := data;
-		latch_nxt := latch;
 		prev_nxt := prev;
-
-		if bcnt = "00000" and sclk = '1' then
-			cs_nxt := '0';
-			data_nxt := (others => '0');
-		end if;
+		latch_nxt := latch;
+		acc_nxt := acc;
+		delayed_nxt := delayed;
+		delayed2_nxt := delayed2;
+		comb_nxt := comb;
+		decim_nxt := decim;
 
 		if sclk = '1' then
-			-- Count bits on falling edge of sclk
-			if bcnt_nxt = "10011" then
-				bcnt_nxt := "00000";
+			bcnt_nxt := bcnt + "1";
+			if bcnt = "0" then
+				cs_nxt := '0';
+				data_nxt := (others => '0');
+			elsif bcnt = x"13" then
+				bcnt_nxt := (others => '0');
+				-- Integrator 1/(1 + z^-1)
 				prev_nxt := data;
-				delta := unsigned(data) - unsigned(prev);
-				latch_nxt := std_logic_vector(delta(7 downto 0));
-			else
-				bcnt_nxt := bcnt + "1";
+				sample := signed("0" & data) - signed("0" & prev);
+				acc_nxt := acc + sample;
+				if decim = to_unsigned(decim_factor - 1, decim'length) then
+					decim_nxt := (others => '0');
+				else
+					decim_nxt := decim + "1";
+				end if;
+				-- Post-decimate comb (1 - z^-1)
+				if decim = "0" then
+					delayed_nxt := acc;
+					delayed2_nxt := delayed;
+					comb_nxt := acc - delayed;
+				end if;
+				latch_nxt := std_logic_vector(comb(comb'high - bitgain downto comb'high - (7 + bitgain)) + x"80");
 			end if;
 			-- When active, shift in data or go inactive
 			if cs = '0' then
-				if bcnt = "10010" then
+				if bcnt = x"12" then
 					cs_nxt := '1';
 				end if;
 			end if;
-		else
-			if cs = '0' and bcnt > "00011" and bcnt < "10001" then
-				data_nxt := data(10 downto 0) & sync_d0(1);
+		elsif cs = '0' then
+			if bcnt = x"10" then
+				cs_nxt := '1';
+			elsif bcnt > x"3" and bcnt < x"10" then
+				data_nxt := data(data'high-1 downto 0) & sync_d0(1);
 			end if;
 		end if;
 
 		cs_new <= cs_nxt;
 		bcnt_new <= bcnt_nxt;
 		data_new <= data_nxt;
-		latch_new <= latch_nxt;
 		prev_new <= prev_nxt;
+		latch_new <= latch_nxt;
+		acc_new <= acc_nxt;
+		delayed_new <= delayed_nxt;
+		delayed2_new <= delayed2_nxt;
+		comb_new <= comb_nxt;
+		decim_new <= decim_nxt;
 	end process;
 
 --	LED(0) <= cs;
