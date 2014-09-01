@@ -51,9 +51,9 @@ architecture Behavioral of toplevel is
 	constant bitgain : integer := 4;
 	constant decim_factor : integer := 10;
 	signal acc, acc_new : signed(data'high + bitgain downto 0);
-	signal delayed, delayed_new : signed(acc'range);
-	signal delayed2, delayed2_new : signed(acc'range);
-	signal comb, comb_new : signed(data'high + bitgain downto 0);
+	type delayline is array (0 to 0) of signed(acc'range);  -- Extend to (0 to 1) to narrow the passband
+	signal delayed, delayed_new : delayline;
+	signal comb, comb_new : signed(acc'range);
 	signal decim, decim_new : unsigned(4 downto 0);
 begin
 
@@ -129,10 +129,9 @@ begin
 			prev <= (others => '0');
 			latch <= X"00";
 			acc <= (others => '0');
-			delayed <= (others => '0');
-			delayed2 <= (others => '0');
+			delayed <= (others => (others => '0'));
 			comb <= (others => '0');
-			decim <= to_unsigned(5, decim'length);
+			decim <= to_unsigned(0, decim'length);
 		elsif rising_edge(adclk) then
 			sclk <= not(sclk);  -- Note: divides adclk by 2
 			bcnt <= bcnt_new;
@@ -140,7 +139,6 @@ begin
 			data <= data_new;
 			latch <= latch_new;
 			delayed <= delayed_new;
-			delayed2 <= delayed2_new;
 			acc <= acc_new;
 			comb <= comb_new;
 			decim <= decim_new;
@@ -156,7 +154,7 @@ begin
 		end if;
 	end process;
 
-	process(bcnt, cs, sclk, data, prev, latch, sync_d0, acc, delayed, delayed2, comb, decim)
+	process(bcnt, cs, sclk, data, prev, latch, sync_d0, acc, delayed, comb, decim)
 		variable bcnt_nxt : unsigned(4 downto 0);
 		variable cs_nxt : std_logic;
 		variable data_nxt : std_logic_vector(11 downto 0);
@@ -164,10 +162,10 @@ begin
 		variable latch_nxt : std_logic_vector(7 downto 0);
 		variable sample : signed(data'high + 1 downto 0);
 		variable acc_nxt : signed(acc'range);
-		variable delayed_nxt : signed(acc'range);
-		variable delayed2_nxt : signed(acc'range);
+		variable delayed_nxt : delayline;
 		variable comb_nxt : signed(comb'range);
 		variable decim_nxt : unsigned(decim'range);
+		variable tmp : signed(comb'high + 1 downto 0);
 	begin
 		bcnt_nxt := bcnt;
 		cs_nxt := cs;
@@ -176,7 +174,6 @@ begin
 		latch_nxt := latch;
 		acc_nxt := acc;
 		delayed_nxt := delayed;
-		delayed2_nxt := delayed2;
 		comb_nxt := comb;
 		decim_nxt := decim;
 
@@ -186,23 +183,28 @@ begin
 				cs_nxt := '0';
 				data_nxt := (others => '0');
 			elsif bcnt = x"13" then
-				bcnt_nxt := (others => '0');
-				-- Integrator 1/(1 + z^-1)
-				prev_nxt := data;
-				sample := signed("0" & data) - signed("0" & prev);
-				acc_nxt := acc + sample;
 				if decim = to_unsigned(decim_factor - 1, decim'length) then
 					decim_nxt := (others => '0');
 				else
 					decim_nxt := decim + "1";
 				end if;
+				bcnt_nxt := (others => '0');
+				-- DC Filter
+				prev_nxt := data;
+				sample := signed("0" & data) - signed("0" & prev);  -- Comb filter to remove DC
+				-- Integrator 1/(1 + z^-1)
+				acc_nxt := acc + sample(sample'high downto 1);      -- Downshift 'sample' to compensate for the DC filter's gain
 				-- Post-decimate comb (1 - z^-1)
 				if decim = "0" then
-					delayed_nxt := acc;
-					delayed2_nxt := delayed;
-					comb_nxt := acc - delayed;
+					comb_nxt := acc - delayed(0);
+					delayed_nxt(delayed'high) := acc;
+					for I in delayed'high downto 1 loop
+						delayed_nxt(I-1) := delayed(I);
+					end loop;
 				end if;
-				latch_nxt := std_logic_vector(comb(comb'high - bitgain downto comb'high - (7 + bitgain)) + x"80");
+				tmp := comb + shift_left(to_signed(1,tmp'length), tmp'length - 2);
+				assert tmp >= "0" report "Here be dragons, tmp must be greater than zero" severity error;
+				latch_nxt := std_logic_vector(tmp(tmp'high - 1 downto tmp'high - 8));
 			end if;
 			-- When active, shift in data or go inactive
 			if cs = '0' then
@@ -225,7 +227,6 @@ begin
 		latch_new <= latch_nxt;
 		acc_new <= acc_nxt;
 		delayed_new <= delayed_nxt;
-		delayed2_new <= delayed2_nxt;
 		comb_new <= comb_nxt;
 		decim_new <= decim_nxt;
 	end process;

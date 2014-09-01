@@ -54,7 +54,7 @@ BEGIN
 	begin		
 		wait for CLK_period*10;  -- 100 ns
 		rst <= '0';
-		AD_D0 <= 'U';
+		AD_D0 <= 'Z';
 		wait for 100 ns;  -- First falling edge of AD_CK
 
 	loop
@@ -67,7 +67,7 @@ BEGIN
 					AD_D0 <= sine(I)(15 - B);
 					wait for AD_CK_period;
 				else
-					AD_D0 <= 'U';
+					AD_D0 <= 'Z';
 					wait for AD_CK_period;
 				end if;
 			end loop;
