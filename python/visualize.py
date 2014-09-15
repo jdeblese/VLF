@@ -54,11 +54,11 @@ def run(port) :
 					running = False
 					break
 			raw = fpga.read(N)
-			data = numpy.array( [ord(c) for c in raw] )
+			data = numpy.array( [ord(c) for c in raw], dtype='int8' )
 			# Plot a histogram
 			bins[:] = 0
 			for sample in data :
-				bins[sample] += 1
+				bins[sample+128] += 1
 			bins *= 513
 			bins /= N
 			for b in range(0, 256) :
@@ -66,7 +66,7 @@ def run(port) :
 				bar[h - bins[b]:] = byte2color(255)
 				pix[w-256+b,:] = bar
 			# Remove DC
-			data = data - data.mean()
+#			data = data - data.mean()
 			# Plot a waterfall FFT
 			if len(data) < N :
 				running = False
