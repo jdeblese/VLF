@@ -47,6 +47,7 @@ architecture Behavioral of toplevel is
 
 	signal amp : unsigned(2 downto 0);
 	signal direct : std_logic;
+	signal clipping : std_logic;
 begin
 
 	-- Minimum output frequency of FX is 5 MHz, so have to use CLKDV instead
@@ -170,8 +171,21 @@ begin
 			end if;
 			cs_old := cs_int;
 
-			-- Attenuate by 2, amplify as requested
-			sample <= shift_left(shift_right(data,1), to_integer(amp));
+			-- Attenuate by 2, amplify as requested, clip as needed
+			-- FIXME find a better way to detect clipping in a generic way
+			clipping <= '0';
+			sample <= shift_left(data, to_integer(amp));
+			if data(data'high) = '0' and data > shift_right(to_signed(2047, data'length), to_integer(amp)) then
+				-- Maximum positive value
+				sample <= (others => '1');
+				sample(sample'high) <= '0';
+				clipping <= '1';
+			elsif data(data'high) = '1' and data < shift_right(to_signed(-2048, data'length), to_integer(amp)) then
+				-- Minimum negative value
+				sample <= (others => '0');
+				sample(sample'high) <= '1';
+				clipping <= '1';
+			end if;
 		end if;
 	end process;
 
@@ -181,7 +195,8 @@ begin
 
 	LED(0) <= direct;
 	LED(3 downto 1) <= std_logic_vector(amp);
-	LED(7 downto 4) <= (others => '0');
+	LED(4) <= clipping;
+	LED(7 downto 5) <= (others => '0');
 
 end Behavioral;
 
