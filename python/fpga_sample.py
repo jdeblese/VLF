@@ -41,12 +41,13 @@ fpga = serial.Serial(sys.argv[1],baudrate,timeout=1)
 samples = []
 while len(samples) < N :
 	samples += [ord(c) for c in fpga.read(N - len(samples))]
-	print N, len(samples)
+	print "Sample count: %d/%d"%(len(samples),N)
 fpga.close()
 
-data = np.array(samples)
+data = np.array(samples, dtype='uint16')
+# Convert to unsigned, temporarily
+data = np.array(data + 128, dtype='uint8')
 print "Data range [%d,%d], mean %d"%(data.min(),data.max(),data.mean())
-data += 128 - data.mean()  # Remove DC
 
 plot = Gnuplot.Gnuplot(debug=0)
 plot.set_string('output', 'oscilloscope.png')
@@ -56,13 +57,13 @@ t = np.arange(0, T, 1./fs)
 pldata = (Gnuplot.Data(t[:512], data[:512], with_="points", title=None),)
 plot.plot(*pldata)
 
-bins = np.arange(0, 256)
+bins = np.arange(-128, 127, dtype='int32')
 bindata = np.zeros(bins.shape)
 for sample in data :
 	bindata[sample] += 1
 plot = Gnuplot.Gnuplot(debug=0)
 plot.set_string('output', 'histogram.png')
-plot('set xrange [0:256]')
+plot.set_range('xrange', (bins.min(),bins.max()))
 plot('set xtics 16')
 plot('set logscale y')
 plot('set style fill solid border -1')

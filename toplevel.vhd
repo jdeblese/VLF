@@ -40,26 +40,13 @@ architecture Behavioral of toplevel is
     signal status : clockgen_status;
 
 	signal cs_int, cs_strobe : std_logic;
-	signal data : std_logic_vector(11 downto 0);
-	signal prev, prev_new : std_logic_vector(data'range);
-	signal latch, latch_new : std_logic_vector(7 downto 0);
-
-
-	constant bitgain : integer := 4;
-	constant decim_factor : integer := 10;
-	signal acc, acc_new : signed(data'high + bitgain downto 0);
-	type delayline is array (0 to 1) of signed(acc'range);  -- Extend to (0 to 1) to narrow the passband
-	signal delayed, delayed_new : delayline;
-	signal comb, comb_new : signed(acc'range);
-	signal decim, decim_new : unsigned(4 downto 0);
-
-	-- Delay line and output of a three-tap fir filter
-	type threetapfir is array(0 to 1) of signed(data'range);
-	signal ttfdelay, ttfdelay_new : threetapfir;
-	signal ttf, ttf_new : signed(data'range);
+	signal data : signed(11 downto 0);
+	signal sample : signed(11 downto 0);
+	signal latch : std_logic_vector(7 downto 0);
+	signal reduced : signed(latch'range);
 
 	signal amp : unsigned(2 downto 0);
-
+	signal direct : std_logic;
 begin
 
 	-- Minimum output frequency of FX is 5 MHz, so have to use CLKDV instead
@@ -123,6 +110,18 @@ begin
 			AD_CK => AD_CK );
 	AD_CS <= cs_int;
 
+	ufil : entity work.filter
+		generic map (
+			inb => sample'length,
+			outb => reduced'length )
+		port map (
+			CLK => clk,
+			RST => rst,
+			input => sample,
+			istrobe => cs_strobe,
+			output => reduced,
+			ostrobe => open );
+
 	-- Button debouncer
 	-- Amplifies the incoming signal by shifting
 	process(clk, rst)
@@ -132,6 +131,7 @@ begin
 		if rst = '1' then
 			btn_int := (others => '0');
 			amp <= (others => '0');
+			direct <= '0';
 		elsif rising_edge(clk) then
 			if count = "0" then
 				-- Button actions
@@ -139,6 +139,9 @@ begin
 					amp <= amp + "1";
 				elsif btn(3) = '1' and btn_int(3) = '0' then
 					amp <= amp - "1";
+				end if;
+				if btn(2) = '1' and btn_int(2) = '0' then
+					direct <= not(direct);
 				end if;
 				-- Store
 				btn_int := btn;
@@ -151,26 +154,13 @@ begin
 	-- Memory
 	process(clk,RST)
 		variable cs_old : std_logic;
+		variable count : unsigned(7 downto 0);
 	begin
 		if RST = '1' then
-			prev <= (others => '0');
-			latch <= X"00";
-			acc <= (others => '0');
-			delayed <= (others => (others => '0'));
-			comb <= (others => '0');
-			decim <= to_unsigned(0, decim'length);
-			ttfdelay <= (others => (others => '0'));
-			ttf <= (others => '0');
+--			latch <= X"00";
 			cs_old := '1';
+			count := (others => '0');
 		elsif rising_edge(clk) then
-			prev <= prev_new;
-			latch <= latch_new;
-			delayed <= delayed_new;
-			acc <= acc_new;
-			comb <= comb_new;
-			decim <= decim_new;
-			ttfdelay <= ttfdelay_new;
-			ttf <= ttf_new;
 
 			-- Strobe on rising edge of CS
 			if cs_old = '0' and cs_int = '1' then
@@ -179,74 +169,19 @@ begin
 				cs_strobe <= '0';
 			end if;
 			cs_old := cs_int;
+
+			-- Attenuate by 2, amplify as requested
+			sample <= shift_left(shift_right(data,1), to_integer(amp));
 		end if;
 	end process;
 
-	-- Combinatorial
-	process(data, cs_strobe, prev, latch, acc, delayed, comb, decim, ttfdelay, ttf)
-		variable prev_nxt : std_logic_vector(prev'range);
-		variable latch_nxt : std_logic_vector(7 downto 0);
-		variable sample : signed(data'range);
-		variable acc_nxt : signed(acc'range);
-		variable delayed_nxt : delayline;
-		variable comb_nxt : signed(comb'range);
-		variable decim_nxt : unsigned(decim'range);
-		variable tmp : signed(ttf'high + 1 downto 0);
-		variable ttfdelay_nxt : threetapfir;
-		variable ttf_nxt, ttftmp : signed(ttf'range);
-	begin
-		prev_nxt := prev;
-		latch_nxt := latch;
-		acc_nxt := acc;
-		delayed_nxt := delayed;
-		comb_nxt := comb;
-		decim_nxt := decim;
-		ttfdelay_nxt := ttfdelay;
-		ttf_nxt := ttf;
+	-- This value need not be registered, as is latched inside filter output
+	latch <= std_logic_vector(reduced) when direct = '0' else
+	         std_logic_vector(sample(sample'high downto sample'high - (latch'length - 1)));
 
-		if cs_strobe = '1' then
-			if decim = to_unsigned(decim_factor - 1, decim'length) then
-				decim_nxt := (others => '0');
-			else
-				decim_nxt := decim + "1";
-			end if;
-			-- Convert to signed, centered around 1.65 V
-			sample := shift_left( signed(data) - shift_left(to_signed(1,sample'length), sample'length - 1) ,to_integer(amp));
-			-- Pre-decimate integrator 1/(1 + z^-1)
-			acc_nxt := acc + sample;
-			if decim = "0" then
-				-- Post-decimate comb (1 - z^-1)
-				comb_nxt := acc - delayed(0);
-				delayed_nxt(delayed'high) := acc;
-				for I in delayed'high downto 1 loop  -- FIXME Null range warning when delay line is one element long
-					delayed_nxt(I-1) := delayed(I);
-				end loop;
-				-- Post-decimate FIR Filter
-				ttfdelay_nxt(ttfdelay'high) := comb(comb'high downto comb'high + 1 - ttf'length);
-				for I in ttfdelay'high downto 1 loop
-					ttfdelay_nxt(I-1) := ttfdelay(I);
-				end loop;
-				ttf_nxt := shift_right(ttfdelay(0),0) + shift_right( shift_right(ttfdelay(0),3) - shift_right(comb(comb'high downto comb'high + 1 - ttf'length),4) - shift_right(ttfdelay(1),4) , 0);
-			end if;
-			-- Output, signed 8-bit value
-			latch_nxt := std_logic_vector(ttf(ttf'high downto ttf'high - 7));
-		end if;
-
-		prev_new <= prev_nxt;
-		latch_new <= latch_nxt;
-		acc_new <= acc_nxt;
-		delayed_new <= delayed_nxt;
-		comb_new <= comb_nxt;
-		decim_new <= decim_nxt;
-		ttfdelay_new <= ttfdelay_nxt;
-		ttf_new <= ttf_nxt;
-	end process;
-
---	LED(0) <= cs;
---	LED(1) <= sclk;
---	LED(3 downto 2) <= sync_d0;
---	LED(7 downto 4) <= data(11 downto 8);
-	LED <= latch;
+	LED(0) <= direct;
+	LED(3 downto 1) <= std_logic_vector(amp);
+	LED(7 downto 4) <= (others => '0');
 
 end Behavioral;
 

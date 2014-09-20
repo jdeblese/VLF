@@ -9,8 +9,8 @@ entity pmodad1 is
 	Port (
 		rst : IN STD_LOGIC;
 		clk40 : in  STD_LOGIC;
-		s0 : out std_logic_vector(11 downto 0);
-		s1 : out std_logic_vector(11 downto 0);
+		s0 : out signed(11 downto 0);
+		s1 : out signed(11 downto 0);
 		AD_CS : out std_logic;
 		AD_D0 : in std_logic;
 		AD_D1 : in std_logic;
@@ -23,7 +23,7 @@ architecture Behavioral of pmodad1 is
 	signal cs, cs_new : std_logic;
 	signal data, data_new : std_logic_vector(11 downto 0);
 	signal sync_d0 : std_logic_vector(1 downto 0);
-	signal s0_int, s0_new : std_logic_vector(s0'range);
+	signal s0_int, s0_new : signed(s0'range);
 
 begin
 
@@ -53,10 +53,16 @@ begin
 			bcnt <= (others => '1');
 			data <= (others => '0');
 		elsif rising_edge(clk40) then
-			s0_int <= s0_new;
 			sclk <= not(sclk);  -- Note: divides clk40 by 2 down to 20 MHz
 			bcnt <= bcnt_new;
 			data <= data_new;
+
+			if sclk = '1' and bcnt = x"0f" then
+				-- Convert to signed, centered around half range
+				-- [0,4095]  ->  [-2048,2047]
+				s0_int <= signed(data(data'high-1 downto 0) & sync_d0(1)) - shift_left(to_signed(1,s0'length), s0'length - 1);
+			end if;
+
 		end if;
 	end process;
 
@@ -71,7 +77,7 @@ begin
 		end if;
 	end process;
 
-	process(bcnt, cs, sclk, data, sync_d0, s0_int)
+	process(bcnt, cs, sclk, data, sync_d0)
 		variable bcnt_nxt : unsigned(4 downto 0);
 		variable cs_nxt : std_logic;
 		variable data_nxt : std_logic_vector(11 downto 0);
@@ -79,7 +85,6 @@ begin
 		bcnt_nxt := bcnt;
 		cs_nxt := cs;
 		data_nxt := data;
-		s0_new <= s0_int;
 
 		if sclk = '1' then
 			if bcnt = "0" then
@@ -98,9 +103,6 @@ begin
 				bcnt_nxt := bcnt + "1";
 			end if;
 
-			if bcnt = x"0f" then
-				s0_new <= data(data'high-1 downto 0) & sync_d0(1);
-			end if;
 			data_nxt := data(data'high-1 downto 0) & sync_d0(1);
 		end if;
 
