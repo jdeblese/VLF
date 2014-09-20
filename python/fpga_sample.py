@@ -57,8 +57,8 @@ t = np.arange(0, T, 1./fs)
 pldata = (Gnuplot.Data(t[:512], data[:512], with_="points", title=None),)
 plot.plot(*pldata)
 
-bins = np.arange(-128, 127, dtype='int32')
-bindata = np.zeros(bins.shape)
+bins = np.arange(-128, 128, dtype='int32')
+bindata = np.zeros(bins.shape, dtype='int32')
 for sample in data :
 	bindata[sample] += 1
 plot = Gnuplot.Gnuplot(debug=0)
