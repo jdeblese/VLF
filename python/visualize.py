@@ -45,8 +45,12 @@ def run(port) :
 	hwnd = numpy.hamming(N)
 	bins = numpy.zeros((256,),dtype='int32')
 	bar = numpy.zeros((h,), dtype=pix.dtype)
-	pix[w-257,:] = numpy.ones((h,), dtype=pix.dtype) * rgb2int(255, 0, 0)
+	redline = numpy.ones((h,), dtype=pix.dtype) * rgb2int(255, 0, 0)
+	blueline = numpy.ones((h,), dtype=pix.dtype) * rgb2int(0, 0, 255)
+	blackline = numpy.zeros((h,), dtype=pix.dtype)
+	pix[w-257,:] = redline
 	with serial.Serial(port, baudrate, timeout=1) as fpga :
+		div = 0
 		while running :
 			events = sdl2.ext.get_events()
 			for event in events :
@@ -55,26 +59,31 @@ def run(port) :
 					break
 			raw = fpga.read(N)
 			data = numpy.array( [ord(c) for c in raw], dtype='int8' )
-			# Plot a histogram
-			bins[:] = 0
-			for sample in data :
-				bins[sample+128] += 1
-			bins *= 513
-			bins /= N
-			for b in range(0, 256) :
-				bar[:] = 0
-				bar[h - bins[b]:] = byte2color(255)
-				pix[w-256+b,:] = bar
-			# Remove DC
-#			data = data - data.mean()
-			# Plot a waterfall FFT
-			if len(data) < N :
-				running = False
+
+			if div == 0 :
+				# Plot a histogram
+				bins[:] = 0
+				for sample in data :
+					bins[sample+128] += 1
+				bins *= 513
+				bins /= N
+				for b in range(0, 256) :
+					bar[:] = 0
+					bar[h - bins[b]:] = byte2color(255)
+					pix[w-256+b,:] = bar
+				# Plot a waterfall FFT
+				if len(data) < N :
+					running = False
+				else :
+					data = numpy.abs(numpy.fft.rfft(hwnd * data)).reshape((1,h))
+					pix[col,:] = limit(data)
+					col = (col + 1) % (w - 257)
 			else :
-				data = numpy.abs(numpy.fft.rfft(hwnd * data)).reshape((1,h))
-				pix[col,:] = limit(data)
-				col = (col + 1) % (w - 257)
+				pix[col,:] = blueline
+			pix[(col+1)%(w-257),:] = blackline
+
 			window.refresh()
+			div = (div + 1) % 340  # Approximately 1 screen an hour
 		window.hide()
 		sdl2.ext.quit()
 		print "Closing serial port..."
