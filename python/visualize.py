@@ -3,6 +3,7 @@ import numpy
 import serial
 import sdl2
 import sdl2.ext
+from PIL import Image, ImageDraw
 
 baudrate = 1e6
 
@@ -57,6 +58,19 @@ def run(port) :
 				if event.type == sdl2.SDL_QUIT :
 					running = False
 					break
+				elif event.type == sdl2.SDL_KEYDOWN :
+					if event.key.keysym.sym == sdl2.SDLK_RETURN :
+						ss = numpy.array(pix).transpose()
+#						ss = numpy.array(ss * 1.0 / (1<<16), dtype='uint8')
+						B = numpy.array(ss & 0xFF, dtype='uint8')
+						G = numpy.array((ss & 0xFF00)/2**8, dtype='uint8')
+						R = numpy.array((ss & 0xFF0000)/2**16, dtype='uint8')
+						A = numpy.array((ss & 0xFF000000)/2**24, dtype='uint8')
+						RGB = numpy.rollaxis(numpy.array((R,G,B)), 0, 3)
+						print RGB.shape
+						ss = numpy.array(R / 3. + G / 3. + B / 3., dtype='uint8')
+						im = Image.fromarray(RGB, 'RGB')
+						im.save(str(time.time()) + ".png", "PNG")
 			raw = fpga.read(N)
 			data = numpy.array( [ord(c) for c in raw], dtype='int8' )
 
@@ -78,9 +92,11 @@ def run(port) :
 					data = numpy.abs(numpy.fft.rfft(hwnd * data)).reshape((1,h))
 					pix[col,:] = limit(data)
 					col = (col + 1) % (w - 257)
+					pix[(col+1)%(w-257),:] = blueline
 			else :
 				pix[col,:] = blueline
-			pix[(col+1)%(w-257),:] = blackline
+				pix[(col+1)%(w-257),:] = blackline
+			pix[(col+2)%(w-257),:] = blackline
 
 			window.refresh()
 			div = (div + 1) % 340  # Approximately 1 screen an hour
