@@ -44,8 +44,16 @@ architecture Behavioral of toplevel is
 	signal sample : signed(11 downto 0);
 	signal latch : std_logic_vector(7 downto 0);
 
+	-- Interpolator variables
+	signal upsampled : signed(sample'range);
+	signal histrobe : std_logic;
+
+	-- 60 kHz filter variables
+	signal filtered : signed(upsampled'range);
+	signal midstrobe : std_logic;
+
 	-- Decimator variables
-	signal downsampled : signed(sample'range);
+	signal downsampled : signed(filtered'range);
 	signal reduced : signed(latch'range);
 
 	signal amp : unsigned(2 downto 0);
@@ -114,15 +122,30 @@ begin
 			AD_CK => AD_CK );
 	AD_CS <= cs_int;
 
+	to3m : entity work.interpolator
+		GENERIC MAP (
+			divmax => 100,
+			divwidth => 7,
+			width => sample'length,
+			factor => 3,      -- Up to 3 Mhz (60khz / 0.02)
+			bitfactor => 2,   -- Space for the gain of log2(3) (1.6)
+			compensation => 2 )
+		PORT MAP ( rst, clk, sample, cs_strobe, upsampled, histrobe );
+
+	-- Output rate is input / 5, so 600 kHz
+	filter : entity work.sin60k
+		GENERIC MAP ( width => sample'length )
+		PORT MAP ( rst, clk, upsampled, histrobe, filtered, midstrobe );
+
 	to100k : entity work.decimator
 		GENERIC MAP (
-			divwidth => 4,
-			width => sample'length,
-			factor => 10,    -- Down to 100 kHz
-			bitfactor => 4,  -- Space for gain of log2(10) (3.3)
-			compensation => 4,
-			N => 2 )
-		PORT MAP ( rst, clk, sample, cs_strobe, downsampled, open );
+			divwidth => 3,
+			width => filtered'length,
+			factor => 6,     -- Down to 100 kHz
+			bitfactor => 3,  -- Space for gain of log2(6) (2.6)
+			compensation => 2,
+			N => 1 )
+		PORT MAP ( rst, clk, filtered, midstrobe, downsampled, open );
 
 	reduced <= resize(shift_right(downsampled, downsampled'length - reduced'length), reduced'length);
 
