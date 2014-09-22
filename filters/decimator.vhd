@@ -21,12 +21,18 @@ end decimator;
 architecture Behavioral of decimator is
 	signal int  : signed(input'high + bitfactor downto 0);
 	signal comb : signed(int'range);
+	signal equalizer  : signed(comb'high + 1 downto 0);
 	-- Timing
 	signal newstrobe : std_logic;
 	signal div : unsigned(divwidth - 1 downto 0) := (others => '0');
+
+	type delayline1 is array (integer range <>) of signed(comb'range);
+	type delayline2 is array (integer range <>) of signed(equalizer'range);
+
 begin
 
-	output <= resize(shift_right(comb, compensation), output'length);
+	-- Shift right at least one, due to equalizer's gain
+	output <= resize(shift_right(equalizer, compensation + 1), output'length);
 	ostrobe <= newstrobe; -- Currently unused
 
 	-- Timing strobes
@@ -63,15 +69,31 @@ begin
 	end process;
 
 	process(rst,clk,newstrobe)
-		variable delay : signed(comb'range);
+		variable combdelay : delayline1(0 to 1); -- 2 taps adds a zero at fs/2
+		variable equalizerdelay : delayline2(0 to 1);  -- 2 taps for 3 coefficients
 	begin
 		if rst = '1' then
 			comb <= (others => '0');
-			delay := (others => '0');
+			combdelay := (others => (others => '0'));
+			equalizerdelay := (others => (others => '0'));
 		elsif rising_edge(clk) and newstrobe = '1' then
-			-- Comb for the 5x decimator, gain-compensated
-			comb <= resize(int,comb'length) - delay;
-			delay := int;
+			-- Comb for the 5x decimator, variable tap delay line
+			comb <= resize(int,comb'length) - combdelay(combdelay'high);
+			for T in combdelay'high downto 1 loop
+				combdelay(T) := combdelay(T-1);
+			end loop;
+			combdelay(0) := int;
+			-- Equalization FIR filter
+			--   coefficients: -1/16 9/8 -1/16
+			--   gain: 2 (+6 dB)
+			for T in equalizerdelay'high downto 1 loop
+				equalizerdelay(T) := equalizerdelay(T-1);
+			end loop;
+			equalizerdelay(0) := resize(comb, equalizer'length);
+			equalizer <= resize(shift_right(equalizerdelay(0),0), equalizer'length)
+				- resize(shift_right(comb,4), equalizer'length)
+				- resize(shift_right(equalizerdelay(1),4), equalizer'length)
+				+ resize(shift_right(equalizerdelay(0),3), equalizer'length);
 		end if;
 	end process;
 
