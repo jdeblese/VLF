@@ -43,6 +43,9 @@ architecture Behavioral of toplevel is
 	signal data : signed(11 downto 0);
 	signal sample : signed(11 downto 0);
 	signal latch : std_logic_vector(7 downto 0);
+
+	-- Decimator variables
+	signal downsampled : signed(sample'range);
 	signal reduced : signed(latch'range);
 
 	signal amp : unsigned(2 downto 0);
@@ -111,17 +114,17 @@ begin
 			AD_CK => AD_CK );
 	AD_CS <= cs_int;
 
-	ufil : entity work.filter
-		generic map (
-			inb => sample'length,
-			outb => reduced'length )
-		port map (
-			CLK => clk,
-			RST => rst,
-			input => sample,
-			istrobe => cs_strobe,
-			output => reduced,
-			ostrobe => open );
+	to100k : entity work.decimator
+		GENERIC MAP (
+			divwidth => 4,
+			width => sample'length,
+			factor => 10,    -- Down to 100 kHz
+			bitfactor => 4,  -- Space for gain of log2(10) (3.3)
+			compensation => 4,
+			N => 2 )
+		PORT MAP ( rst, clk, sample, cs_strobe, downsampled, open );
+
+	reduced <= resize(shift_right(downsampled, downsampled'length - reduced'length), reduced'length);
 
 	-- Button debouncer
 	-- Amplifies the incoming signal by shifting

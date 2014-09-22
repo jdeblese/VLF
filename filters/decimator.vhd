@@ -8,7 +8,8 @@ entity decimator is
 		width : integer := 12;
 		factor : integer := 3;
 		bitfactor : integer := 2;
-		compensation : integer := 2 );
+		compensation : integer := 2;
+		N : integer := 1 );
 	Port (
 		RST : IN STD_LOGIC;
 		CLK : in STD_LOGIC;
@@ -33,10 +34,10 @@ begin
 
 	-- Shift right at least one, due to equalizer's gain
 	output <= resize(shift_right(equalizer, compensation + 1), output'length);
-	ostrobe <= newstrobe; -- Currently unused
+	ostrobe <= newstrobe;
 
 	-- Timing strobes
-	process(clk, rst)
+	process(clk, rst, istrobe)
 	begin
 		if rst = '1' then
 			div <= (others => '0');
@@ -48,6 +49,7 @@ begin
 			end if;
 		end if;
 	end process;
+
 	process(clk)
 	begin
 		if rising_edge(clk) then
@@ -69,13 +71,14 @@ begin
 	end process;
 
 	process(rst,clk,newstrobe)
-		variable combdelay : delayline1(0 to 1); -- 2 taps adds a zero at fs/2
+		variable combdelay : delayline1(0 to N-1); -- 2 taps adds a zero at fs/2
 		variable equalizerdelay : delayline2(0 to 1);  -- 2 taps for 3 coefficients
 	begin
 		if rst = '1' then
 			comb <= (others => '0');
 			combdelay := (others => (others => '0'));
 			equalizerdelay := (others => (others => '0'));
+			equalizer <= (others => '0');
 		elsif rising_edge(clk) and newstrobe = '1' then
 			-- Comb for the 5x decimator, variable tap delay line
 			comb <= resize(int,comb'length) - combdelay(combdelay'high);
